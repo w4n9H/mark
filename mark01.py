@@ -1,11 +1,18 @@
 import cgi
 import re
 import json
+import importlib
 from io import StringIO
 from wsgiref.simple_server import make_server, demo_app
 
 
 responses = {200: "OK"}
+
+
+def import_string(dotted_path):
+    module_path, class_name = dotted_path.rsplit('.', 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
 
 
 class RegexPattern:
@@ -29,18 +36,21 @@ class BaseHandler:
 
     _router = None  # 路由系统
 
-    def load_middleware(self, middleware):
-        """
-        load settings.middleware list
-        """
+    def load_middleware(self, middleware_list):
+        """load settings.middleware list"""
         self._request_middleware = []
-        self._view_middleware = []
-        self._template_response_middleware = []
+        # self._view_middleware = []
+        # self._template_response_middleware = []
         self._response_middleware = []
-        self._exception_middleware = []
+        # self._exception_middleware = []
 
-        # handler = None
-        # self._middleware_chain = handler
+        for middleware_path in middleware_list:
+            mw_instance = import_string(middleware_path)
+
+            if hasattr(mw_instance, 'process_request'):
+                self._request_middleware.append(mw_instance.process_request)
+            if hasattr(mw_instance, 'process_response'):
+                self._response_middleware.append(mw_instance.process_response)
 
     def load_urls(self, urlpatterns):
         self._router = {RegexPattern(i[0]): i[1] for i in urlpatterns}
@@ -48,13 +58,17 @@ class BaseHandler:
     def get_response(self, request):
         response = None
         # 1.首先处理中间件 middleware
-        # response = self._middleware_chain(request)
-        # return response
+        for req in self._request_middleware:
+            request = req(req, request)
 
-        # 2.然后处理请求
+        # 2.然后处理view请求
         for regex, view in self._router.items():
             if regex.match(request.path):
                 response = view(request)
+
+        # 3.最后处理response
+        for resp in self._response_middleware:
+            response = resp(resp, request, response)
         return response
 
 
@@ -84,11 +98,6 @@ class HttpResponse:
         return responses.get(self.status_code, 'Unknown Status Code')
 
     def render(self):
-        # return '<%(cls)s status_code=%(status_code)d%(content_type)s>' % {
-        #     'cls': self.__class__.__name__,
-        #     'status_code': self.status_code,
-        #     'content_type': self.content_type,
-        # }
         stdout = StringIO()
         print(self.content, file=stdout)
         return [stdout.getvalue().encode("utf-8")]
@@ -141,7 +150,7 @@ def demo_views(request):
 
 
 def runserver(ip='127.0.0.1', port=8000):
-    middleware = []
+    middleware = ['middleware.test.TestMiddleware']
     urlpatterns = [(r'^/test$', demo_views)]
     app = make_server(ip, port, WSGIHandler(urlpatterns=urlpatterns, middleware=middleware))
     app.serve_forever()
