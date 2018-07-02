@@ -3,3 +3,4 @@
 * mark02, 一个简易的wsgi服务器, 可以和mark01配合使用
 * mark03, 一个基于异步非阻塞的wsgi服务器, 可以和mark01配合使用
 * mark04, 基于class高级用法实现的一个简易ORM
+* mark05, 实现一个简单版本的multiprocessing
